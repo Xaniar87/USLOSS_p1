@@ -18,8 +18,8 @@ struct procStruct {
    procPtr		   quitHead;        // added attribute
    procPtr 		   quitNext;        // added attribute
    procPtr         parentPtr;       // added attribute
-   procPtr         whoZappedMeHead;
-   procPtr		   whoZappedMeNext;
+   procPtr         whoZappedMeHead; // added attribute
+   procPtr		   whoZappedMeNext; // added attribute
    char            name[MAXNAME];     /* process's name */
    char            startArg[MAXARG];  /* args passed to process */
    USLOSS_Context  state;             /* current context for process */

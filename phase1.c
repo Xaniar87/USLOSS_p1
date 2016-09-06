@@ -446,6 +446,7 @@ void quit(int status)
     p1_quit(Current->pid);
 } /* quit */
 
+/* ------------------------- zap ----------------------------------- */
 int zap(int pidToZap)
 {
 	
@@ -482,6 +483,7 @@ int zap(int pidToZap)
 	 return -2;
 }
 
+/* ------------------------- releaseZapBlocks ----------------------------------- */
 void releaseZapBlocks()
 {
 	procPtr tempPtr = Current->whoZappedMeHead;
@@ -496,11 +498,13 @@ void releaseZapBlocks()
 	}
 }
 
+/* ------------------------- isZapped ----------------------------------- */
 int isZapped(void)
 {
 	return Current->amIZapped;
 }
 
+/* ------------------------- setZapped ----------------------------------- */
 void setZapped(int pidToZap)
 {
 	procPtr zappedPtr = &ProcTable[(pidToZap % MAXPROC)];
