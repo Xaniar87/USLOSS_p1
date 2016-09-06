@@ -15,9 +15,9 @@ struct procStruct {
    procPtr         nextProcPtr;
    procPtr         childProcPtr;
    procPtr         nextSiblingPtr;
-   procPtr		   quitHead;
-   procPtr 		   quitNext;
-   procPtr         myParent;       // added attribute
+   procPtr		   quitHead;        // added attribute
+   procPtr 		   quitNext;        // added attribute
+   procPtr         parentPtr;       // added attribute
    procPtr         whoZappedMeHead;
    procPtr		   whoZappedMeNext;
    char            name[MAXNAME];     /* process's name */
@@ -29,8 +29,8 @@ struct procStruct {
    char           *stack;
    unsigned int    stackSize;
    int             status;        /* READY, BLOCKED, QUIT, etc. */
-   int			   quitStatus;
-   int             amIZapped;
+   int			   quitStatus;      // added attribute
+   int             amIZapped;       // added attribute
  
 
    /* other fields as needed... */

@@ -36,11 +36,15 @@ void insertRL(procPtr slot);
 void removeRL(procPtr slot);
 void removeChild(procPtr child);
 void printReadyList();
-int prev_pid_num = -1;
+int prevPid = -1;
 int zap(int pidToZap);
 void releaseZapBlocks();
 void setZapped(int pidToZap);
 int amIZapped(void);
+void dumpProcess(procPtr aProcPtr);
+void dumpProcessHeader();
+char* statusString(int status);
+int kidsCount(procPtr aProcPtr);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -186,7 +190,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         return -1;
     
     //Special case where pid assignment loop could try and assign same pid consecutivly. Avoids situation    
-    if( (usableSlot(pidCounter)) && (pidCounter == prev_pid_num)) 
+    if( (usableSlot(pidCounter)) && (pidCounter == prevPid)) 
     {
     	pidCounter++;
 	}
@@ -201,7 +205,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     procSlot = pidCounter % MAXPROC;
     //For above check to ensure same pid not used twice
-	prev_pid_num = pidCounter;
+	prevPid = pidCounter;
     
   
 
@@ -239,10 +243,10 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].amIZapped		= 0;
     // fill in parentPid
     if (Current == NULL)
-        ProcTable[procSlot].myParent = NULL;
+        ProcTable[procSlot].parentPtr = NULL;
     else
     {
-        ProcTable[procSlot].myParent = Current;
+        ProcTable[procSlot].parentPtr = Current;
         
 		// update parent's childrenList
         if(Current->childProcPtr == NULL)
@@ -405,24 +409,24 @@ void quit(int status)
 	 
 	Current->status = QUITTED;
 	//If child has parent
-	if(Current->myParent != NULL)
+	if(Current->parentPtr != NULL)
 	{
 		// if has a parent, let the parent know child quits and set its status to ready
-		if(Current->myParent->status == JOIN_BLOCKED)
+		if(Current->parentPtr->status == JOIN_BLOCKED)
 		{
-			Current->myParent->status = READY;
-			insertRL(Current->myParent);
+			Current->parentPtr->status = READY;
+			insertRL(Current->parentPtr);
 		}
 		
                 
         // If quitList is currently empty, make Current quit process the head
-        if(Current->myParent->quitHead == NULL) {
-            Current->myParent->quitHead = Current;
+        if(Current->parentPtr->quitHead == NULL) {
+            Current->parentPtr->quitHead = Current;
             Current->quitNext = NULL;
         }
         else {
         	//Set temp pointer to the front of parent quit list
-        	procPtr tempPtr = Current->myParent->quitHead;
+        	procPtr tempPtr = Current->parentPtr->quitHead;
         	//Travel the list until we come to the last existing quitProcess
         	while(tempPtr->quitNext != NULL)
         	{
@@ -640,10 +644,10 @@ void disk_handler(int type, void *todo) {
 void dumpProcesses()
 {
 	int i;
-	printf("Process ID     Name     Status     Priority\n");
+    dumpProcessHeader();
 	for(i = 0; i < MAXPROC; i++)
 	{
-		printf("%d      %10s        %d     %d\n", ProcTable[i].pid, ProcTable[i].name, ProcTable[i].status, ProcTable[i].priority);
+        dumpProcess(&ProcTable[i]);
 	}
 }
 
@@ -763,14 +767,14 @@ void removeRL(procPtr slot)
 void removeChild(procPtr child)
 {
 	//If first element on child list is one to remove	
-	if(child->myParent->childProcPtr->pid == child->pid)
+	if(child->parentPtr->childProcPtr->pid == child->pid)
 	{
-		child->myParent->childProcPtr = child->nextSiblingPtr;
+		child->parentPtr->childProcPtr = child->nextSiblingPtr;
 	}
 	else
 	{
-		procPtr tempPtr = child->myParent->childProcPtr;
-		procPtr tempTrail = child->myParent->childProcPtr;
+		procPtr tempPtr = child->parentPtr->childProcPtr;
+		procPtr tempTrail = child->parentPtr->childProcPtr;
 		while(tempPtr->pid != child->pid)
 		{
 			tempTrail = tempPtr;
@@ -781,5 +785,52 @@ void removeChild(procPtr child)
 	
 }
 
-		
+/* ------------------------- dumpProcess ----------------------------------- */
+void dumpProcess(procPtr aProcPtr)
+{
+    int pid = aProcPtr->pid;
+    int parentPid = -2;
+    if (aProcPtr->parentPtr != NULL)
+        parentPid = aProcPtr->parentPtr->pid;
+    int priority = aProcPtr->priority;
+    char *status = statusString(aProcPtr->status);
+    int kids = kidsCount(aProcPtr);
+    char *name = aProcPtr->name;
+    USLOSS_Console(" %d\t  %d\t   %d\t\t%s\t\t  %d\t   %d\t%s\n", pid, parentPid, priority, status, kids, -1, name);
+}
+
+/* ------------------------- dumpProcessHeader ----------------------------------- */
+void dumpProcessHeader()
+{
+    USLOSS_Console("PID	Parent	Priority	Status		# Kids	CPUtime	Name\n");
+}
+
+/* ------------------------- statusString ----------------------------------- */
+char* statusString(int status)
+{
+    switch(status)
+    {
+        case 0: return "EMPTY"; break;
+        case 1: return "READY"; break;
+        case 2: return "JOIN_BLOCKED"; break;
+        case 3: return "QUIT"; break;
+        default: return "UNKNOWN";
+    }
+}
+
+/* ------------------------- statusString ----------------------------------- */
+int kidsCount(procPtr aProcPtr)
+{
+    int kidsCounter = 0;
+    procPtr tmpKid = aProcPtr->childProcPtr;
+    
+    while(tmpKid != NULL)
+    {
+        kidsCounter++;
+        tmpKid = tmpKid->nextSiblingPtr;
+    }
+    
+    return kidsCounter;
+}
+
 
