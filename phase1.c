@@ -336,6 +336,11 @@ int join(int *status)
     	USLOSS_Console("join: called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    //If process currently has no children, should not be trying to join. Return -2
+    if(Current->childProcPtr == NULL)
+    {
+        return -2;
+    }
 	
 	//If no child has quit yet, block and take off ready list
 	if(Current->quitHead == NULL)
@@ -343,7 +348,11 @@ int join(int *status)
 		Current->status = JOIN_BLOCKED;
 		removeRL(Current);
 		dispatcher();
-		
+        
+        //Condition where join process was zapped while waiting for child to quit
+        if(Current->amIZapped){
+            return -1;
+        }
 		*status = Current->quitHead->quitStatus;
         //Save temp ID since will be moving past current quit process
         int temp_pid = Current->quitHead->pid;
@@ -376,7 +385,7 @@ int join(int *status)
 	
 }
 	
-//   return -1;  // -1 is not correct! Here to prevent warning.
+
  /* join */
 
 
@@ -467,10 +476,7 @@ int zap(int pidToZap)
 		USLOSS_Halt(1);
 	} 
 	
-	if(isZapped())
-	{
-		return -1;
-	}
+	
 	
 	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
 		return 0;
@@ -480,7 +486,12 @@ int zap(int pidToZap)
 	Current->status = BLOCKED;
 	removeRL(Current);
 	dispatcher();
-	
+    //If Process was zapped during its block
+    if(isZapped())
+    {
+        return -1;
+    }
+	//Else if process it zapped quit as it should have
 	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
 		return 0;
 ///////////////!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!//////////////////////!!!!!!!!!!!!!!/ CHECK THIS	
@@ -490,11 +501,13 @@ int zap(int pidToZap)
 }
 
 /* ------------------------- releaseZapBlocks ----------------------------------- */
+//Sets processes that were blocked due to zapping Current back to Ready status and reinserts onto readyList
 void releaseZapBlocks()
 {
-	procPtr tempPtr = Current->whoZappedMeHead;
+    procPtr tempPtr = Current->whoZappedMeHead;
 	while(tempPtr != NULL)
 	{
+        //Travel through all processes which zapped Current and set to Ready and reinsert
 		if(tempPtr->status == BLOCKED)
 		{
 			tempPtr->status = READY;
@@ -505,6 +518,7 @@ void releaseZapBlocks()
 }
 
 /* ------------------------- isZapped ----------------------------------- */
+//Return if process has been zapped
 int isZapped(void)
 {
 	return Current->amIZapped;
@@ -517,11 +531,14 @@ void setZapped(int pidToZap)
 	//Set process zapped variable to indiciate zapped
 	zappedPtr->amIZapped = 1;
 	
-	if(zappedPtr->whoZappedMeHead == NULL)
+    //Update Current processes list of who zapped it
+	//If list NULL
+    if(zappedPtr->whoZappedMeHead == NULL)
 	{
 		zappedPtr->whoZappedMeHead = Current;
 		Current->whoZappedMeNext = NULL;
 	}
+    //Else list not null, insert at front. Order doesn't matter.
 	else
 	{
 		Current->whoZappedMeNext = zappedPtr->whoZappedMeHead;
@@ -541,7 +558,7 @@ void setZapped(int pidToZap)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
-	
+	//If not process currently running
 	if(Current == NULL)
 	{
 		Current = ReadyList;
@@ -549,6 +566,7 @@ void dispatcher(void)
 	}
 	else
 	{
+        //Else some process current running
 		procPtr prevProc = Current;
 		Current = ReadyList;
 		USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
@@ -584,25 +602,27 @@ int sentinel (char *dummy)
 /* check to determine if deadlock has occurred... */
 static void checkDeadlock()
 {
-	  // itereate to see if all other processes either quit or empty
+    // itereate to see if all other processes either quit or empty
     int i;
+    //Because sentinal will always be Ready or Running start count at 1
     int numOfProcesses = 1;
+    //Tripped if sentinal called and not all process table slots are quitted or empty
     int deadLockFlag = 0;
+    //Go through table. If not quitted or empty or sentinal, add one to counter and set flag
     for (i = 0; i < MAXPROC; i++) {
         if (ProcTable[i].status != EMPTY && ProcTable[i].status != QUITTED && ProcTable[i].priority != 6) {
             numOfProcesses++;
             deadLockFlag = 1;
         }
 	}	
-	
+	//If we did have deadlock, print message with number of processes stuck
 	if(deadLockFlag == 1)
 	{
 		USLOSS_Console("checkDeadlock(): numProc = %d. Only Sentinel should be left. Halting...\n", numOfProcesses);
 		USLOSS_Halt(1);
 	}
         
-    
-    
+    //Else successful completion
     USLOSS_Console("All processes completed.\n");
     USLOSS_Halt(0);
 } /* checkDeadlock */
@@ -761,7 +781,8 @@ void removeRL(procPtr slot)
 	{
 		procPtr tempPtr = ReadyList;
 		procPtr tempTrail = ReadyList;
-		while(1)
+		//Process should always be in readyList if we try to remove it, so don't need while condition.
+        while(1)
 		{
 			if(toRemove->pid == tempPtr->pid)
 			{
@@ -786,6 +807,7 @@ void removeChild(procPtr child)
 	}
 	else
 	{
+        //Search through list of children and remove particular child
 		procPtr tempPtr = child->parentPtr->childProcPtr;
 		procPtr tempTrail = child->parentPtr->childProcPtr;
 		while(tempPtr->pid != child->pid)
