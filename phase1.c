@@ -196,7 +196,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 	}
 
 	// find an empty slot in the process table
-    while(!usableSlot(pidCounter) && forkCounter < 50)
+    while(!usableSlot(pidCounter) && forkCounter < MAXPROC)
     {
     
         pidCounter++;
@@ -357,6 +357,7 @@ int join(int *status)
         
         
     }
+    // if already quitted report quit status
 	else
 	{
 		*status = Current->quitHead->quitStatus;
@@ -395,19 +396,21 @@ void quit(int status)
     	USLOSS_Console("quit(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
-	//If process tries to quit before all children have quit
+	// check if all children have quitted
 	if(Current->childProcPtr != NULL)
 	{
 	  	USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
 	    USLOSS_Halt(1);
 	}
 	
+    // check if isZapped
 	if(isZapped())
 	{
 		releaseZapBlocks();
 	}
 	 
 	Current->status = QUITTED;
+    
 	//If child has parent
 	if(Current->parentPtr != NULL)
 	{
@@ -424,8 +427,8 @@ void quit(int status)
             Current->parentPtr->quitHead = Current;
             Current->quitNext = NULL;
         }
+        // quitList not empty
         else {
-        	//Set temp pointer to the front of parent quit list
         	procPtr tempPtr = Current->parentPtr->quitHead;
         	//Travel the list until we come to the last existing quitProcess
         	while(tempPtr->quitNext != NULL)
@@ -450,18 +453,20 @@ void quit(int status)
 int zap(int pidToZap)
 {
 	
+    // check if zapping itself
 	if(Current->pid == pidToZap)
 	{
 		USLOSS_Console("Error, Process cannot Zap itself...exiting...");
 		USLOSS_Halt(1);
 	}
 	
-	if(ProcTable[ (pidToZap % 50) ].status == EMPTY)
+    // check if zapping nonexistant process
+	if(ProcTable[ (pidToZap % MAXPROC) ].status == EMPTY)
 	{
 		USLOSS_Console("Error, attempt to Zap nonexistant process....exiting...");
 		USLOSS_Halt(1);
 	} 
-		
+	
 	if(isZapped())
 	{
 		return -1;
@@ -470,6 +475,7 @@ int zap(int pidToZap)
 	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
 		return 0;
 	
+    
 	setZapped(pidToZap);
 	Current->status = BLOCKED;
 	removeRL(Current);
@@ -648,20 +654,23 @@ void disk_handler(int type, void *todo) {
 void dumpProcesses()
 {
 	int i;
+    
     dumpProcessHeader();
+    
 	for(i = 0; i < MAXPROC; i++)
 	{
         dumpProcess(&ProcTable[i]);
 	}
 }
 
+/* ------------------------- printReadyList ----------------------------------- */
 void printReadyList()
 {
 	procPtr temp = ReadyList; 
-	printf("ID     Name       Status     Priority\n");
+	USLOSS_Console("ID     Name       Status     Priority\n");
 	while(temp->nextProcPtr != NULL)
 	{
-		printf("%d     %s     %d     %d\n", temp->pid, temp->name, temp->status, temp->priority);
+		USLOSS_Console("%d     %s     %d     %d\n", temp->pid, temp->name, temp->status, temp->priority);
 		temp = temp->nextProcPtr;
 	}
 }
