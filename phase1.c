@@ -45,6 +45,8 @@ void dumpProcess(procPtr aProcPtr);
 void dumpProcessHeader();
 char* statusString(int status);
 int kidsCount(procPtr aProcPtr);
+void enableInterrupts();
+void time_Slice(void);
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -62,6 +64,10 @@ procPtr Current;
 
 // the next pid to be assigned
 unsigned int pidCounter = SENTINELPID;
+
+int isTimeSlice = 0; //Variable to let dispatcher know whether it is switching processes due to time slice or normal operation
+                 //Because need to reset program runtime if being switched due to slice.
+
 
 
 /* -------------------------- Functions ----------------------------------- */
@@ -102,6 +108,7 @@ void startup()
     USLOSS_IntVec[USLOSS_DISK_INT]      = disk_handler; //disk_handler;
     USLOSS_IntVec[USLOSS_DISK_DEV]      = disk_handler; //disk_handler;
 
+	
     // startup a sentinel process
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): calling fork1() for sentinel\n");
@@ -241,6 +248,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].stackSize       = stacksize;
     ProcTable[procSlot].status          = READY;
     ProcTable[procSlot].amIZapped		= 0;
+    ProcTable[procSlot].timeRun         = 0;
     // fill in parentPid
     if (Current == NULL)
         ProcTable[procSlot].parentPtr = NULL;
@@ -558,17 +566,37 @@ void setZapped(int pidToZap)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
+	
 	//If not process currently running
 	if(Current == NULL)
 	{
+        
 		Current = ReadyList;
-		USLOSS_ContextSwitch(NULL, &(Current->state));
+        Current->timeStart = USLOSS_Clock();
+        enableInterrupts();
+        USLOSS_ContextSwitch(NULL, &(Current->state));
 	}
-	else
-	{
-        //Else some process current running
+	else //Else some process current running
+    {   
+        //If processes is being switched due to timeSlice, reset its timeRun to 0.
+        if(isTimeSlice)
+        {
+            Current->timeRun = 0;
+            //Reset timeSlice flag
+            isTimeSlice = 0;
+        }
+        else
+        {
+            //Record runtime of Current process before switching
+            Current->timeRun += (USLOSS_Clock() - Current->timeStart);
+        }
+        
 		procPtr prevProc = Current;
 		Current = ReadyList;
+        
+        //Set start time for process about to begin
+        Current->timeStart = USLOSS_Clock();
+		enableInterrupts();
 		USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
 
 	}
@@ -631,6 +659,19 @@ static void checkDeadlock()
 /*
  * Disables the interrupts.
  */
+ 
+void enableInterrupts()
+{
+	// turn the interrupts OFF iff we are in kernel mode
+    if( (USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0 ) {
+        //not in kernel mode
+        USLOSS_Console("Kernel Error: Not in kernel mode, may not ");
+        USLOSS_Console("disable interrupts\n");
+        USLOSS_Halt(1);
+    } else
+    	//We ARE in kernel mode
+    	USLOSS_PsrSet( USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT );	
+}
 void disableInterrupts()
 {
     // turn the interrupts OFF iff we are in kernel mode
@@ -647,7 +688,22 @@ void disableInterrupts()
 /* ------------------------- clock_handler ----------------------------------- */
 void clock_handler(int type, void *todo)
 {
+    if( ( (USLOSS_Clock() - Current->timeStart) + Current->timeRun) > SLICE_LENGTH)
+    {
+        time_Slice();
+    }
+}
+//If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
+//Set timeSlice flag to true and call dispatcher
+void time_Slice(void)
+{
+    removeRL(Current);
+    insertRL(Current);
     
+    //To let dispatcher know to reset process run time
+    isTimeSlice = 1;
+    dispatcher();
+
 }
 
 /* ------------------------- alarm_handler ----------------------------------- */

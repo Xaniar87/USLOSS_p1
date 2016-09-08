@@ -7,6 +7,7 @@
 #define JOIN_BLOCKED 2
 #define QUITTED 3
 #define BLOCKED 4
+#define SLICE_LENGTH 80000
 typedef struct procStruct procStruct;
 
 typedef struct procStruct * procPtr;
@@ -31,6 +32,8 @@ struct procStruct {
    int             status;        /* READY, BLOCKED, QUIT, etc. */
    int			   quitStatus;      // added attribute
    int             amIZapped;       // added attribute
+   int             timeStart;       // added attribute When process began running
+   int             timeRun;         //How long process has run for
  
 
    /* other fields as needed... */
