@@ -46,7 +46,12 @@ void dumpProcessHeader();
 char* statusString(int status);
 int kidsCount(procPtr aProcPtr);
 void enableInterrupts();
-void time_Slice(void);
+void timeSlice(void);
+void disableInterrupts();
+int blockMe(int newStatus);
+int readCurStartTime(void);
+int unblockProc(int pid);
+
 
 /* -------------------------- Globals ------------------------------------- */
 
@@ -167,11 +172,14 @@ void finish()
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-	if(!inKernel())
+    if(!inKernel())
     {
     	USLOSS_Console("fork1(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    
+    //Turn off interrupts during fork creation process
+    disableInterrupts();
     
     int procSlot = -1;
     int forkCounter = 0;
@@ -344,9 +352,15 @@ int join(int *status)
     	USLOSS_Console("join: called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    
+    //Disable interrupts
+    disableInterrupts();
+    
     //If process currently has no children, should not be trying to join. Return -2
     if(Current->childProcPtr == NULL)
     {
+        //Enable interupts since returning out of join function
+        enableInterrupts();
         return -2;
     }
 	
@@ -356,6 +370,9 @@ int join(int *status)
 		Current->status = JOIN_BLOCKED;
 		removeRL(Current);
 		dispatcher();
+     
+        //Dispatcher may have reenabled interupts, need to disable them again while we process rest of join
+        disableInterrupts();
         
         //Condition where join process was zapped while waiting for child to quit
         if(Current->amIZapped){
@@ -366,10 +383,13 @@ int join(int *status)
         int temp_pid = Current->quitHead->pid;
         //Change quit processes Status to empty so ProcSlot can be given to new process
         Current->quitHead->status = EMPTY;
+        //Remove child from parents children list
         removeChild(Current->quitHead);
         //quitHead = next element on quitlist
         Current->quitHead = Current->quitHead->quitNext;
-        //Remove child from parents children list
+        
+        //Reenable Interrupts
+        enableInterrupts();
         return (temp_pid);
         
         
@@ -385,6 +405,8 @@ int join(int *status)
         removeChild(Current->quitHead);
         //Move the head of the list to the next Process
         Current->quitHead = Current->quitHead->quitNext;
+        //Turn interrupts back on
+        enableInterrupts();
         //Return pid of process that quit (front of quitList)
         return (temp_pid);
         
@@ -413,6 +435,9 @@ void quit(int status)
     	USLOSS_Console("quit(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    
+    disableInterrupts();
+    
 	// check if all children have quitted
 	if(Current->childProcPtr != NULL)
 	{
@@ -469,6 +494,8 @@ void quit(int status)
 /* ------------------------- zap ----------------------------------- */
 int zap(int pidToZap)
 {
+    //Want to consider Zap atomic up until dispatcher call. After that could be interupted
+    disableInterrupts();
 	
     // check if zapping itself
 	if(Current->pid == pidToZap)
@@ -499,13 +526,11 @@ int zap(int pidToZap)
     {
         return -1;
     }
-	//Else if process it zapped quit as it should have
-	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
-		return 0;
-///////////////!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!//////////////////////!!!!!!!!!!!!!!/ CHECK THIS	
-	
-	 /////Should not get here...would signify error////////////!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	 return -2;
+	else
+    {
+        //Would only have reactivated this processes if zapped process quit, so don't need to check status. Can assume zapped process quit ok.
+        return 0;
+    }
 }
 
 /* ------------------------- releaseZapBlocks ----------------------------------- */
@@ -690,21 +715,10 @@ void clock_handler(int type, void *todo)
 {
     if( ( (USLOSS_Clock() - Current->timeStart) + Current->timeRun) > SLICE_LENGTH)
     {
-        time_Slice();
+        timeSlice();
     }
 }
-//If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
-//Set timeSlice flag to true and call dispatcher
-void time_Slice(void)
-{
-    removeRL(Current);
-    insertRL(Current);
-    
-    //To let dispatcher know to reset process run time
-    isTimeSlice = 1;
-    dispatcher();
 
-}
 
 /* ------------------------- alarm_handler ----------------------------------- */
 void alarm_handler(int type, void *todo) {
@@ -875,6 +889,54 @@ void removeChild(procPtr child)
 	}
 	
 }
+
+
+/* ------------------------PHASE 2 REQURIED FUNCTIONS ------------------------
+||---------------------------------------------------------------------------||
+ */
+int blockMe(int newStatus)
+{
+    //Set status to status code passed in (Currently have status 11 for SELF_BLOCKED
+    Current->status = newStatus;
+    
+    //Remove from readyList and call dispatcher
+    removeRL(Current);
+    dispatcher();
+    //When process is reactivated, check and see if it was zapped. If so, return -1
+    if(Current->amIZapped)
+    {
+        return -1;
+    }
+    //Else return 0
+    return 0;
+    
+}
+
+
+
+
+//Simple function to return time in microseconds that current processes started
+int readCurStartTime(void)
+{
+    return Current->timeStart;
+}
+
+//If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
+//Set timeSlice flag to true and call dispatcher
+void timeSlice(void)
+{
+    removeRL(Current);
+    insertRL(Current);
+    
+    //To let dispatcher know to reset process run time
+    isTimeSlice = 1;
+    dispatcher();
+    
+}
+ 
+ 
+ 
+ 
 
 /* ------------------------- dumpProcess ----------------------------------- */
 void dumpProcess(procPtr aProcPtr)
