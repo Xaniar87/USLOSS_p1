@@ -217,6 +217,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         pidCounter++;
         forkCounter++;
     }
+    //No slots available
+    if(forkCounter == MAXPROC)
+        return -1;
 
     procSlot = pidCounter % MAXPROC;
     //For above check to ensure same pid not used twice
@@ -352,6 +355,10 @@ int join(int *status)
     	USLOSS_Console("join: called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    //Should I check for it here? 
+    if(isZapped()){
+        return -1;
+    }
     
     //Disable interrupts
     disableInterrupts();
@@ -375,7 +382,8 @@ int join(int *status)
         disableInterrupts();
         
         //Condition where join process was zapped while waiting for child to quit
-        if(Current->amIZapped){
+        
+        if(isZapped()){
             return -1;
         }
 		*status = Current->quitHead->quitStatus;
@@ -438,13 +446,22 @@ void quit(int status)
     
     disableInterrupts();
     
+    
 	// check if all children have quitted
 	if(Current->childProcPtr != NULL)
 	{
-	  	USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
-	    USLOSS_Halt(1);
-	}
-	
+        procPtr tempPtr = Current->childProcPtr;
+        while(tempPtr != NULL)
+        {
+            if(tempPtr->status != QUITTED && tempPtr->status != EMPTY)
+            {
+                dumpProcesses();
+                USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
+                USLOSS_Halt(1);
+            }
+        tempPtr = tempPtr->nextSiblingPtr;
+        }
+    }
     // check if isZapped
 	if(isZapped())
 	{
@@ -516,7 +533,7 @@ int zap(int pidToZap)
 	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
 		return 0;
 	
-    
+  
 	setZapped(pidToZap);
 	Current->status = BLOCKED;
 	removeRL(Current);
@@ -561,6 +578,7 @@ int isZapped(void)
 void setZapped(int pidToZap)
 {
 	procPtr zappedPtr = &ProcTable[(pidToZap % MAXPROC)];
+    
 	//Set process zapped variable to indiciate zapped
 	zappedPtr->amIZapped = 1;
 	
@@ -713,10 +731,10 @@ void disableInterrupts()
 /* ------------------------- clock_handler ----------------------------------- */
 void clock_handler(int type, void *todo)
 {
-    if( ( (USLOSS_Clock() - Current->timeStart) + Current->timeRun) > SLICE_LENGTH)
-    {
-        timeSlice();
-    }
+ //   if( ( (USLOSS_Clock() - Current->timeStart) + Current->timeRun) > SLICE_LENGTH)
+ //   {
+  //      timeSlice();
+  //  }
 }
 
 
@@ -912,6 +930,10 @@ int blockMe(int newStatus)
     
 }
 
+int unblockProc(int pid)
+{
+    
+}
 
 
 
@@ -967,6 +989,7 @@ char* statusString(int status)
         case 1: return "READY"; break;
         case 2: return "JOIN_BLOCKED"; break;
         case 3: return "QUIT"; break;
+        case 4: return "ZAP_BLOCKED";
         default: return "UNKNOWN";
     }
 }
