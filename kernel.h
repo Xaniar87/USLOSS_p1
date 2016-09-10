@@ -6,7 +6,7 @@
 #define READY 1
 #define JOIN_BLOCKED 2
 #define QUITTED 3
-#define BLOCKED 4
+#define ZAP_BLOCKED 4
 #define SELF_BLOCK 11
 #define SLICE_LENGTH 80000
 typedef struct procStruct procStruct;

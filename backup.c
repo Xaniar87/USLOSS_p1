@@ -51,9 +51,6 @@ void disableInterrupts();
 int blockMe(int newStatus);
 int readCurStartTime(void);
 int unblockProc(int pid);
-void cleanProcess(procPtr processToClean);
-void cleanZombies(procPtr zombieHead);
-int readtime(void);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -175,7 +172,6 @@ void finish()
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-	//Check if in Kernel mode, halt if not
     if(!inKernel())
     {
     	USLOSS_Console("fork1(): called while in user mode, by process %d. Halting...\n", Current->pid);
@@ -190,6 +186,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): creating process %s\n", name);
+
+    // test if in kernel mode; halt if in user mode
+    
 
     // Return -2 if stack size is too small
     if (stacksize < USLOSS_MIN_STACK)
@@ -218,12 +217,10 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         pidCounter++;
         forkCounter++;
     }
-    
     //No slots available
     if(forkCounter == MAXPROC)
         return -1;
 
-	//Set available process slot to use
     procSlot = pidCounter % MAXPROC;
     //For above check to ensure same pid not used twice
 	prevPid = pidCounter;
@@ -263,8 +260,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].status          = READY;
     ProcTable[procSlot].amIZapped		= 0;
     ProcTable[procSlot].timeRun         = 0;
-    ProcTable[procSlot].quitStatus		= 0;
-    
     // fill in parentPid
     if (Current == NULL)
         ProcTable[procSlot].parentPtr = NULL;
@@ -354,22 +349,19 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
-
-	
 	//Check for kernel mode
 	if(!inKernel())
     {
     	USLOSS_Console("join: called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
-   
-   	//Disable interrupts
-    disableInterrupts();
-   
-    //???????????????????????????????????????????????????????????????????????????????Should I check for it here? It works, but ask Professor
+    //Should I check for it here?
     if(isZapped()){
         return -1;
     }
+    
+    //Disable interrupts
+    disableInterrupts();
     
     //If process currently has no children, should not be trying to join. Return -2
     if(Current->childProcPtr == NULL)
@@ -394,19 +386,17 @@ int join(int *status)
         if(isZapped()){
             return -1;
         }
-       
-		
 		*status = Current->quitHead->quitStatus;
         //Save temp ID since will be moving past current quit process
         int temp_pid = Current->quitHead->pid;
+        //Change quit processes Status to empty so ProcSlot can be given to new process
+        Current->quitHead->status = EMPTY;
         //Remove child from parents children list
         removeChild(Current->quitHead);
-        Current->quitHead->status = EMPTY;
         //quitHead = next element on quitlist
         Current->quitHead = Current->quitHead->quitNext;
-              
         
-		//Reenable Interrupts
+        //Reenable Interrupts
         enableInterrupts();
         return (temp_pid);
         
@@ -415,18 +405,14 @@ int join(int *status)
     // if already quitted report quit status
 	else
 	{
-
 		*status = Current->quitHead->quitStatus;
         //Store pid into temp spot because about to take it off the quitList
         int temp_pid = Current->quitHead->pid;
         //Change status of quitprocess to Empty so slot can be filled on process table
-        Current->quitHead->status = EMPTY;	
-
-		removeChild(Current->quitHead);
-
+        Current->quitHead->status = EMPTY;
+        removeChild(Current->quitHead);
         //Move the head of the list to the next Process
-        Current->quitHead = Current->quitHead->quitNext;  
-		
+        Current->quitHead = Current->quitHead->quitNext;
         //Turn interrupts back on
         enableInterrupts();
         //Return pid of process that quit (front of quitList)
@@ -436,6 +422,9 @@ int join(int *status)
 
 	
 }
+	
+
+ /* join */
 
 
 /* ------------------------------------------------------------------------
@@ -449,17 +438,14 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
-
-
 	if(!inKernel())
     {
     	USLOSS_Console("quit(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
     
-
-    //Disable interrupts  
     disableInterrupts();
+    
     
 	// check if all children have quitted
 	if(Current->childProcPtr != NULL)
@@ -467,8 +453,7 @@ void quit(int status)
         procPtr tempPtr = Current->childProcPtr;
         while(tempPtr != NULL)
         {
-        	//If a child has not quit, exit with error
-            if(tempPtr->status != QUITTED)
+            if(tempPtr->status != QUITTED && tempPtr->status != EMPTY)
             {
                 dumpProcesses();
                 USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
@@ -476,16 +461,13 @@ void quit(int status)
             }
         tempPtr = tempPtr->nextSiblingPtr;
         }
-        //Else if we are here Current process has quit children that haven't reported yet, but parent wants to quit. So clean out "zombies"
-        cleanZombies(Current->childProcPtr);
     }
     // check if isZapped
 	if(isZapped())
 	{
 		releaseZapBlocks();
 	}
-	
-	//Change status to successfully quit 
+	 
 	Current->status = QUITTED;
     
 	//If child has parent
@@ -498,6 +480,7 @@ void quit(int status)
 			insertRL(Current->parentPtr);
 		}
 		
+                
         // If quitList is currently empty, make Current quit process the head
         if(Current->parentPtr->quitHead == NULL) {
             Current->parentPtr->quitHead = Current;
@@ -517,46 +500,13 @@ void quit(int status)
 		
         }
 	}
-	//Update quit processes quit status for reporting back
+	
 	Current->quitStatus = status;
 	//Take quit process off of readylist
 	removeRL(Current);
     dispatcher();
     p1_quit(Current->pid);
 } /* quit */
-
-//Function that runs through quit children of a parent that are not joined when parent wants to quit.
-void cleanZombies(procPtr zombieHead)
-{
-	procPtr tempZombie = zombieHead;
-	
-	while(tempZombie != NULL)
-	{
-		tempZombie->status = EMPTY;
-		tempZombie = tempZombie->nextSiblingPtr;
-	
-	}
-	
-}
-/*	AT THE MOMENT NOT NECCESSARY, WILL PROBABLY DELETE
-
-//Simple function to clear out values of a Process Table when declaring empty
-void cleanProcess(procPtr processToClean)
-{
-	//Reset variables that may not automatically initalized during fork process
-	processToClean->nextProcPtr = NULL;
-	processToClean->childProcPtr = NULL;
-	processToClean->nextSiblingPtr = NULL;
-	processToClean->quitHead = NULL;
-	processToClean->quitNext = NULL;
-	processToClean->parentPtr = NULL;
-	processToClean->whoZappedMeHead = NULL;
-	processToClean->whoZappedMeNext = NULL;
-	processToClean->amIZapped = 0;
-	processToClean->timeRun = 0;
-	processToClean->status = EMPTY;
-}
-*/
 
 /* ------------------------- zap ----------------------------------- */
 int zap(int pidToZap)
@@ -578,18 +528,15 @@ int zap(int pidToZap)
 		USLOSS_Halt(1);
 	} 
 	
+	
+	
 	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
 		return 0;
 	
   
-	//Child function to perform actual zapping of desired process
 	setZapped(pidToZap);
-	
-	//Block current process
-	Current->status = ZAP_BLOCKED;
-	//Remove blocked process from ready list
+	Current->status = BLOCKED;
 	removeRL(Current);
-	
 	dispatcher();
     //If Process was zapped during its block
     if(isZapped())
@@ -607,13 +554,11 @@ int zap(int pidToZap)
 //Sets processes that were blocked due to zapping Current back to Ready status and reinserts onto readyList
 void releaseZapBlocks()
 {
-	//Set tempPtr to head of processes to release
     procPtr tempPtr = Current->whoZappedMeHead;
-    
 	while(tempPtr != NULL)
 	{
         //Travel through all processes which zapped Current and set to Ready and reinsert
-		if(tempPtr->status == ZAP_BLOCKED)
+		if(tempPtr->status == BLOCKED)
 		{
 			tempPtr->status = READY;
 			insertRL(tempPtr);
@@ -632,7 +577,6 @@ int isZapped(void)
 /* ------------------------- setZapped ----------------------------------- */
 void setZapped(int pidToZap)
 {
-	//Set zappedPtr to process we want to Zap
 	procPtr zappedPtr = &ProcTable[(pidToZap % MAXPROC)];
     
 	//Set process zapped variable to indiciate zapped
@@ -645,17 +589,11 @@ void setZapped(int pidToZap)
 		zappedPtr->whoZappedMeHead = Current;
 		Current->whoZappedMeNext = NULL;
 	}
-    //Else list not null, insert at back. 
+    //Else list not null, insert at front. Order doesn't matter.
 	else
 	{
-		procPtr tempPtr = zappedPtr->whoZappedMeHead;
-		while(tempPtr->whoZappedMeNext != NULL)
-		{
-			tempPtr = tempPtr->whoZappedMeNext;
-		}
-		
-		tempPtr->whoZappedMeNext = Current;
-		Current->whoZappedMeNext = NULL;
+		Current->whoZappedMeNext = zappedPtr->whoZappedMeHead;
+		zappedPtr->whoZappedMeHead = Current;
 	}
 }
 
@@ -675,7 +613,8 @@ void dispatcher(void)
 	//If not process currently running
 	if(Current == NULL)
 	{
-        Current = ReadyList;
+        
+		Current = ReadyList;
         Current->timeStart = USLOSS_Clock();
         enableInterrupts();
         USLOSS_ContextSwitch(NULL, &(Current->state));
@@ -695,7 +634,6 @@ void dispatcher(void)
             Current->timeRun += (USLOSS_Clock() - Current->timeStart);
         }
         
-		//For telling ContextSwitch who prev and current processes are
 		procPtr prevProc = Current;
 		Current = ReadyList;
         
@@ -897,7 +835,7 @@ void insertRL(procPtr toBeAdded )
 				tempTrail->nextProcPtr = newReady;
 				break;
 			}
-			//Else move to next process
+			
 			tempTrail = tempPtr;
 			tempPtr = tempPtr->nextProcPtr;
 		}
@@ -939,7 +877,6 @@ void removeRL(procPtr slot)
 				tempTrail->nextProcPtr = tempPtr->nextProcPtr;
 				break;
 			}
-			//Else move to next process
 			tempTrail = tempPtr;
 			tempPtr = tempPtr->nextProcPtr;
 		}
@@ -966,7 +903,6 @@ void removeChild(procPtr child)
 			tempTrail = tempPtr;
 			tempPtr = tempPtr->nextSiblingPtr;
 		}
-		
 		tempTrail->nextSiblingPtr = tempPtr->nextSiblingPtr;
 	}
 	
@@ -979,9 +915,9 @@ void removeChild(procPtr child)
 int blockMe(int newStatus)
 {
     //Set status to status code passed in (Currently have status 11 for SELF_BLOCKED
-    if(newStatus < 10)
+    if(newStatus > 10)
     {
-        USLOSS_Console("ERROR: status given for blockMe function must be greater than 10. Exiting...");
+        USLOSS_Console("ERROR: status given for blockMe function must be greater than 10. Exiting...);
         USLOSS_Halt(1);
     }
     else
@@ -1009,12 +945,12 @@ int unblockProc(int pid)
     //if the indicated process was not blocked, does not exist, is the current process, or is blocked on a status less than or equal to 10.
     if(ProcToUnBlock->status <= 10 || ProcToUnBlock->pid == Current->pid)
         return -2;
-    ProcToUnBlock->status = READY;
+    ProcToUnblock->status = READY;
     insertRL(ProcToUnBlock);
     dispatcher();
     
     //If process is zapped return -1, else return 0
-    if(isZapped())
+    if(isZapped)
         return -1;
     else
         return 0;
@@ -1039,12 +975,6 @@ void timeSlice(void)
     isTimeSlice = 1;
     dispatcher();
     
-}
-
-int readtime(void)
-{
-	//Divide result by 1000 to get result in milliseconds instead of microseconds
-	return (  (Current->timeRun + (USLOSS_Clock() - Current->timeStart) ) / 1000);
 }
  
  
