@@ -336,6 +336,7 @@ void launch()
         USLOSS_Console("Process %d returned to launch\n", Current->pid);
 
     quit(result);
+    enableInterrupts();
 
 } /* launch */
 
@@ -367,9 +368,7 @@ int join(int *status)
     disableInterrupts();
    
     //???????????????????????????????????????????????????????????????????????????????Should I check for it here? It works, but ask Professor
-    if(isZapped()){
-        return -1;
-    }
+    
     
     //If process currently has no children, should not be trying to join. Return -2
     if(Current->childProcPtr == NULL)
@@ -378,7 +377,7 @@ int join(int *status)
         enableInterrupts();
         return -2;
     }
-	
+
 	//If no child has quit yet, block and take off ready list
 	if(Current->quitHead == NULL)
 	{
@@ -391,7 +390,9 @@ int join(int *status)
         
         //Condition where join process was zapped while waiting for child to quit
         
-        if(isZapped()){
+        if(isZapped())
+		{
+        	*status = Current->quitHead->quitStatus;
             return -1;
         }
        
@@ -415,7 +416,11 @@ int join(int *status)
     // if already quitted report quit status
 	else
 	{
-
+		if(isZapped())
+		{
+	   		*status = Current->quitHead->quitStatus;
+       		 return -1;
+   		}
 		*status = Current->quitHead->quitStatus;
         //Store pid into temp spot because about to take it off the quitList
         int temp_pid = Current->quitHead->pid;
@@ -563,25 +568,28 @@ int zap(int pidToZap)
 {
     //Want to consider Zap atomic up until dispatcher call. After that could be interupted
     disableInterrupts();
+    procPtr procToZap = &(ProcTable[ (pidToZap % MAXPROC) ]);
 	
     // check if zapping itself
 	if(Current->pid == pidToZap)
 	{
-		USLOSS_Console("Error, Process cannot Zap itself...exiting...");
+		USLOSS_Console("zap(): process %d tried to zap itself.  Halting...\n", Current->pid);
 		USLOSS_Halt(1);
 	}
 	
+	
     // check if zapping nonexistant process
-	if(ProcTable[ (pidToZap % MAXPROC) ].status == EMPTY)
+	if(procToZap->status == EMPTY || procToZap->pid != pidToZap)
 	{
-		USLOSS_Console("Error, attempt to Zap nonexistant process....exiting...");
+		USLOSS_Console("zap(): process being zapped does not exist.  Halting...\n");
 		USLOSS_Halt(1);
 	} 
 	
-	if( ProcTable[(pidToZap % MAXPROC)].status == QUITTED )
+	if(procToZap->status == QUITTED && !isZapped())
 		return 0;
-	
-  
+	else if (procToZap->status == QUITTED && isZapped())
+		return -1;	
+ 
 	//Child function to perform actual zapping of desired process
 	setZapped(pidToZap);
 	
@@ -591,6 +599,7 @@ int zap(int pidToZap)
 	removeRL(Current);
 	
 	dispatcher();
+	
     //If Process was zapped during its block
     if(isZapped())
     {
@@ -677,6 +686,7 @@ void dispatcher(void)
 	{
         Current = ReadyList;
         Current->timeStart = USLOSS_Clock();
+        Current->status = RUNNING;
         enableInterrupts();
         USLOSS_ContextSwitch(NULL, &(Current->state));
 	}
@@ -696,9 +706,18 @@ void dispatcher(void)
         }
         
 		//For telling ContextSwitch who prev and current processes are
+		
 		procPtr prevProc = Current;
+		if(prevProc->status == RUNNING)
+		{
+			prevProc->status = READY;
+			removeRL(prevProc);
+			insertRL(prevProc);
+		}
 		Current = ReadyList;
-        
+		//Set current status to Running
+		Current->status = RUNNING;
+		        
         //Set start time for process about to begin
         Current->timeStart = USLOSS_Clock();
 		enableInterrupts();
@@ -876,10 +895,12 @@ void insertRL(procPtr toBeAdded )
     {
         ReadyList = newReady;
         newReady->nextProcPtr = NULL;
+
     }
     //Needs to inserted at front of list
     else if(newReady->priority < ReadyList->priority)
     {
+		
     	newReady->nextProcPtr = ReadyList;
     	ReadyList = newReady;
     }
@@ -895,18 +916,20 @@ void insertRL(procPtr toBeAdded )
 			{
 				newReady->nextProcPtr = tempPtr;
 				tempTrail->nextProcPtr = newReady;
+
 				break;
 			}
 			//Else move to next process
 			tempTrail = tempPtr;
 			tempPtr = tempPtr->nextProcPtr;
+			
 		}
 
    }
     
 }
 
-/* ------------------------- RemoveRL -----------------------------------
+/* ------------------------- getpid -----------------------------------
  ------------------------------------------------------------------------ */
 int getpid()
 {
@@ -937,6 +960,7 @@ void removeRL(procPtr slot)
 			if(toRemove->pid == tempPtr->pid)
 			{
 				tempTrail->nextProcPtr = tempPtr->nextProcPtr;
+
 				break;
 			}
 			//Else move to next process
@@ -1062,13 +1086,13 @@ void dumpProcess(procPtr aProcPtr)
     char *status = statusString(aProcPtr->status);
     int kids = kidsCount(aProcPtr);
     char *name = aProcPtr->name;
-    USLOSS_Console(" %d\t  %d\t   %d\t\t%s\t\t  %d\t   %d\t%s\n", pid, parentPid, priority, status, kids, -1, name);
+    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-10d %-10s\n", pid, parentPid, priority, status, kids, -1, name);
 }
 
 /* ------------------------- dumpProcessHeader ----------------------------------- */
 void dumpProcessHeader()
 {
-    USLOSS_Console("PID	Parent	Priority	Status		# Kids	CPUtime	Name\n");
+    USLOSS_Console("PID	Parent	Priority   Status          # Kids     CPUtime    Name\n");
 }
 
 /* ------------------------- statusString ----------------------------------- */
@@ -1081,6 +1105,7 @@ char* statusString(int status)
         case 2: return "JOIN_BLOCKED"; break;
         case 3: return "QUIT"; break;
         case 4: return "ZAP_BLOCKED";
+        case 5: return "RUNNING";
         default: return "UNKNOWN";
     }
 }
