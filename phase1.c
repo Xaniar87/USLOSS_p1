@@ -613,9 +613,10 @@ int zap(int pidToZap)
 }
 
 /* ------------------------- releaseZapBlocks ----------------------------------- */
-//Sets processes that were blocked due to zapping Current back to Ready status and reinserts onto readyList
 void releaseZapBlocks()
 {
+    //Sets processes that were blocked due to zapping Current back to Ready status and reinserts onto readyList
+    
 	//Set tempPtr to head of processes to release
     procPtr tempPtr = Current->whoZappedMeHead;
     
@@ -632,7 +633,6 @@ void releaseZapBlocks()
 }
 
 /* ------------------------- isZapped ----------------------------------- */
-//Return if process has been zapped
 int isZapped(void)
 {
 	return Current->amIZapped;
@@ -809,6 +809,7 @@ void disableInterrupts()
         USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_INT );
 } /* disableInterrupts */
 
+
 /* ------------------------- clock_handler ----------------------------------- */
 void clock_handler(int type, void *todo)
 {
@@ -884,10 +885,9 @@ int usableSlot(int slot)
 
 /* ------------------------- insertRL -----------------------------------
  ------------------------------------------------------------------------ */
-
-//Function that adds a process to the readylist at the end of its priority
 void insertRL(procPtr toBeAdded )
 {
+    //Function that adds a process to the readylist at the end of its priority
     procPtr newReady = toBeAdded;
     
     // if RL is empty
@@ -929,14 +929,13 @@ void insertRL(procPtr toBeAdded )
     
 }
 
-/* ------------------------- getpid -----------------------------------
- ------------------------------------------------------------------------ */
+/* ------------------------- getpid -----------------------------------  */
 int getpid()
 {
 	return Current->pid;	
 }
-/* ------------------------- RemoveRL -----------------------------------
- ------------------------------------------------------------------------ */
+
+/* ------------------------- RemoveRL ----------------------------------- */
 
 //Function to remove process from ReadyList
 void removeRL(procPtr slot)
@@ -970,11 +969,11 @@ void removeRL(procPtr slot)
 	}
 }
 
-/* ------------------------- RemoveChild -----------------------------------
- ------------------------------------------------------------------------ */
-//Function removes a child from a parents children list
+/* ------------------------- RemoveChild --------------------------------- */
 void removeChild(procPtr child)
 {
+    //Function removes a child from a parents children list
+    
 	//If first element on child list is one to remove	
 	if(child->parentPtr->childProcPtr->pid == child->pid)
 	{
@@ -996,10 +995,10 @@ void removeChild(procPtr child)
 	
 }
 
+/* ------------------------- %%%%%%%%%%%%%%%%%%%%%% -------------------------- */
+/* ------------------------PHASE 2 REQURIED FUNCTIONS ------------------------ */
 
-/* ------------------------PHASE 2 REQURIED FUNCTIONS ------------------------
-||---------------------------------------------------------------------------||
- */
+/* ------------------------- blockMe ----------------------------------- */
 int blockMe(int newStatus)
 {
     //Set status to status code passed in (Currently have status 11 for SELF_BLOCKED
@@ -1025,10 +1024,17 @@ int blockMe(int newStatus)
     return 0;
     
 }
-//This   operation   unblocks   process  pid  that   had   previously   been   blocked   by   calling blockMe. The status of that process is changed to READY, and it is put on the Ready List.
-//The dispatcher will be called as a side-effect of this function.
+
+
+/* ------------------------- unblockProc ----------------------------------- */
 int unblockProc(int pid)
 {
+    /*This   operation   unblocks   process  pid  that   had   previously
+     been   blocked   by   calling blockMe. The status of that process is 
+     changed to READY, and it is put on the Ready List.
+     The dispatcher will be called as a side-effect of this function.
+     */
+    
     procPtr ProcToUnBlock = &ProcTable[pid % MAXPROC];
     //if the indicated process was not blocked, does not exist, is the current process, or is blocked on a status less than or equal to 10.
     if(ProcToUnBlock->status <= 10 || ProcToUnBlock->pid == Current->pid)
@@ -1044,35 +1050,33 @@ int unblockProc(int pid)
         return 0;
 }
 
-
-
-//Simple function to return time in microseconds that current processes started
+/* ------------------------- timeSlice ----------------------------------- */
 int readCurStartTime(void)
 {
+    //Simple function to return time in microseconds that current processes started
     return Current->timeStart;
 }
 
-//If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
-//Set timeSlice flag to true and call dispatcher
+
 void timeSlice(void)
 {
+    //If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
+    //Set timeSlice flag to true and call dispatcher
     removeRL(Current);
     insertRL(Current);
     
     //To let dispatcher know to reset process run time
     isTimeSlice = 1;
     dispatcher();
-    
 }
 
+
+/* ------------------------- readtime ----------------------------------- */
 int readtime(void)
 {
 	//Divide result by 1000 to get result in milliseconds instead of microseconds
 	return (  (Current->timeRun + (USLOSS_Clock() - Current->timeStart) ) / 1000);
 }
- 
- 
- 
  
 
 /* ------------------------- dumpProcess ----------------------------------- */
@@ -1086,13 +1090,13 @@ void dumpProcess(procPtr aProcPtr)
     char *status = statusString(aProcPtr->status);
     int kids = kidsCount(aProcPtr);
     char *name = aProcPtr->name;
-    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-10d %-10s\n", pid, parentPid, priority, status, kids, -1, name);
+    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-5d %-10s\n", pid, parentPid, priority, status, kids, -1, name);
 }
 
 /* ------------------------- dumpProcessHeader ----------------------------------- */
 void dumpProcessHeader()
 {
-    USLOSS_Console("PID	Parent	Priority   Status          # Kids     CPUtime    Name\n");
+    USLOSS_Console("PID	Parent	Priority   Status          # Kids     CPUtime Name\n");
 }
 
 /* ------------------------- statusString ----------------------------------- */
@@ -1102,9 +1106,9 @@ char* statusString(int status)
     {
         case 0: return "EMPTY"; break;
         case 1: return "READY"; break;
-        case 2: return "JOIN_BLOCKED"; break;
+        case 2: return "JOIN_BLOCK"; break;
         case 3: return "QUIT"; break;
-        case 4: return "ZAP_BLOCKED";
+        case 4: return "ZAP_BLOCK";
         case 5: return "RUNNING";
         default: return "UNKNOWN";
     }
