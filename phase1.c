@@ -2,11 +2,8 @@
    phase1.c
    University of Arizona
    Computer Science 452
-   Fall 2015
+   Fall 2016
    ------------------------------------------------------------------------ */
-
-////TODO////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//Address the Zap case where the process gets Zapped while its in Zap (Should return -1)
 
 
 #include "phase1.h"
@@ -73,9 +70,6 @@ procPtr Current;
 // the next pid to be assigned
 unsigned int pidCounter = SENTINELPID;
 
-int isTimeSlice = 0; //Variable to let dispatcher know whether it is switching processes due to time slice or normal operation
-                 //Because need to reset program runtime if being switched due to slice.
-
 
 
 /* -------------------------- Functions ----------------------------------- */
@@ -108,15 +102,7 @@ void startup()
     // Initialize the clock interrupt handler
     USLOSS_IntVec[USLOSS_CLOCK_INT]     = clock_handler; //clock_handler;
     USLOSS_IntVec[USLOSS_CLOCK_DEV]     = clock_handler; //clock_handler;
-    USLOSS_IntVec[USLOSS_ALARM_INT]     = alarm_handler; //alarm_handler;
-    USLOSS_IntVec[USLOSS_ALARM_DEV]     = alarm_handler; //alarm_handler;
-    USLOSS_IntVec[USLOSS_TERM_INT]      = term_handler; //term_handler;
-    USLOSS_IntVec[USLOSS_TERM_DEV]      = term_handler; //term_handler;
-    USLOSS_IntVec[USLOSS_SYSCALL_INT]   = syscall_handler; //syscall_handler;
-    USLOSS_IntVec[USLOSS_DISK_INT]      = disk_handler; //disk_handler;
-    USLOSS_IntVec[USLOSS_DISK_DEV]      = disk_handler; //disk_handler;
-
-	
+   	
     // startup a sentinel process
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): calling fork1() for sentinel\n");
@@ -214,7 +200,6 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 	// find an empty slot in the process table
     while(!usableSlot(pidCounter) && forkCounter < MAXPROC)
     {
-    
         pidCounter++;
         forkCounter++;
     }
@@ -232,7 +217,8 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     /* fill-in entry in process table */
     // fill-in name, startFunc, startArg and state
-    if ( strlen(name) >= (MAXNAME - 1) ) {
+    if ( strlen(name) >= (MAXNAME - 1) )
+	{
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
         USLOSS_Halt(1);
     }
@@ -251,10 +237,11 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].nextProcPtr     = NULL; // ReadyList, need to be updated later in fork1
     ProcTable[procSlot].childProcPtr    = NULL; // ChildrenList
     ProcTable[procSlot].nextSiblingPtr  = NULL; // ChildrenList, need to be updated later in fork1
-    ProcTable[procSlot].quitHead        = NULL;
-    ProcTable[procSlot].quitNext        = NULL;
-    ProcTable[procSlot].whoZappedMeHead = NULL;
-    ProcTable[procSlot].whoZappedMeNext = NULL;
+    ProcTable[procSlot].quitHead        = NULL; //List for tracking quit children
+    ProcTable[procSlot].quitNext        = NULL; //List for tracking quit children
+    ProcTable[procSlot].whoZappedMeHead = NULL; //List for tracking who zapped a process for reactivating during quit
+    ProcTable[procSlot].whoZappedMeNext = NULL; //List for tracking who zapped a process for reactivating during quit
+    
     // fill in others
     ProcTable[procSlot].pid             = pidCounter;
     ProcTable[procSlot].priority        = priority;
@@ -266,10 +253,12 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].quitStatus		= 0;
     
     // fill in parentPid
+    //If no current process, no parent
     if (Current == NULL)
         ProcTable[procSlot].parentPtr = NULL;
     else
     {
+        //Else parent is Current process
         ProcTable[procSlot].parentPtr = Current;
         
 		// update parent's childrenList
@@ -291,6 +280,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     
     /* end of filling in entry in process table */
 
+    
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
     USLOSS_ContextInit(&(ProcTable[procSlot].state), USLOSS_PsrGet(),
@@ -307,9 +297,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     if (ProcTable[procSlot].priority != SENTINELPRIORITY) 
         dispatcher();
 
-    // More stuff to do here...
-
-    return ProcTable[procSlot].pid;  // -1 is not correct! Here to prevent warning.
+    return ProcTable[procSlot].pid;
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -323,20 +311,22 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 void launch()
 {
     int result;
-
+    
+	//Turn on interrupts
+    enableInterrupts();
+    
     if (DEBUG && debugflag)
         USLOSS_Console("launch(): started\n");
 
-    // Enable interrupts
-	USLOSS_PsrSet( (USLOSS_PSR_CURRENT_INT | USLOSS_PsrGet()));
     // Call the function passed to fork1, and capture its return value
     result = Current->startFunc(Current->startArg);
 
     if (DEBUG && debugflag)
         USLOSS_Console("Process %d returned to launch\n", Current->pid);
-
-    quit(result);
-    enableInterrupts();
+    
+	quit(result);
+    
+    
 
 } /* launch */
 
@@ -356,7 +346,6 @@ void launch()
 int join(int *status)
 {
 
-	
 	//Check for kernel mode
 	if(!inKernel())
     {
@@ -367,9 +356,7 @@ int join(int *status)
    	//Disable interrupts
     disableInterrupts();
    
-    //???????????????????????????????????????????????????????????????????????????????Should I check for it here? It works, but ask Professor
-    
-    
+   
     //If process currently has no children, should not be trying to join. Return -2
     if(Current->childProcPtr == NULL)
     {
@@ -389,7 +376,6 @@ int join(int *status)
         disableInterrupts();
         
         //Condition where join process was zapped while waiting for child to quit
-        
         if(isZapped())
 		{
         	*status = Current->quitHead->quitStatus;
@@ -402,18 +388,20 @@ int join(int *status)
         int temp_pid = Current->quitHead->pid;
         //Remove child from parents children list
         removeChild(Current->quitHead);
+        
         Current->quitHead->status = EMPTY;
+        
+        strcpy(Current->quitHead->name, " " );
         //quitHead = next element on quitlist
         Current->quitHead = Current->quitHead->quitNext;
               
-        
-		//Reenable Interrupts
+        //Reenable Interrupts
         enableInterrupts();
+        //Return pid of child and status
         return (temp_pid);
         
-        
     }
-    // if already quitted report quit status
+    // if child process already quitted report quit status
 	else
 	{
 		if(isZapped())
@@ -421,9 +409,11 @@ int join(int *status)
 	   		*status = Current->quitHead->quitStatus;
        		 return -1;
    		}
+        
 		*status = Current->quitHead->quitStatus;
         //Store pid into temp spot because about to take it off the quitList
         int temp_pid = Current->quitHead->pid;
+        
         //Change status of quitprocess to Empty so slot can be filled on process table
         Current->quitHead->status = EMPTY;	
 
@@ -434,12 +424,11 @@ int join(int *status)
 		
         //Turn interrupts back on
         enableInterrupts();
+        
         //Return pid of process that quit (front of quitList)
         return (temp_pid);
         
     }
-
-	
 }
 
 
@@ -455,13 +444,11 @@ int join(int *status)
 void quit(int status)
 {
 
-
-	if(!inKernel())
+    if(!inKernel())
     {
     	USLOSS_Console("quit(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
-    
 
     //Disable interrupts  
     disableInterrupts();
@@ -479,12 +466,15 @@ void quit(int status)
                 USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
                 USLOSS_Halt(1);
             }
-        tempPtr = tempPtr->nextSiblingPtr;
+        
+            tempPtr = tempPtr->nextSiblingPtr;
         }
+        
         //Else if we are here Current process has quit children that haven't reported yet, but parent wants to quit. So clean out "zombies"
         cleanZombies(Current->childProcPtr);
     }
-    // check if isZapped
+    
+    // check if isZapped, if so release processes that are in Zap_Block
 	if(isZapped())
 	{
 		releaseZapBlocks();
@@ -504,12 +494,14 @@ void quit(int status)
 		}
 		
         // If quitList is currently empty, make Current quit process the head
-        if(Current->parentPtr->quitHead == NULL) {
+        if(Current->parentPtr->quitHead == NULL) 
+		{
             Current->parentPtr->quitHead = Current;
             Current->quitNext = NULL;
         }
         // quitList not empty
-        else {
+        else 
+		{
         	procPtr tempPtr = Current->parentPtr->quitHead;
         	//Travel the list until we come to the last existing quitProcess
         	while(tempPtr->quitNext != NULL)
@@ -519,9 +511,9 @@ void quit(int status)
 			//Once we find it, add Current process to end of list
 			tempPtr->quitNext = Current;
 			Current->quitNext = NULL;
-		
-        }
+		}
 	}
+	
 	//Update quit processes quit status for reporting back
 	Current->quitStatus = status;
 	//Take quit process off of readylist
@@ -543,31 +535,13 @@ void cleanZombies(procPtr zombieHead)
 	}
 	
 }
-/*	AT THE MOMENT NOT NECCESSARY, WILL PROBABLY DELETE
-
-//Simple function to clear out values of a Process Table when declaring empty
-void cleanProcess(procPtr processToClean)
-{
-	//Reset variables that may not automatically initalized during fork process
-	processToClean->nextProcPtr = NULL;
-	processToClean->childProcPtr = NULL;
-	processToClean->nextSiblingPtr = NULL;
-	processToClean->quitHead = NULL;
-	processToClean->quitNext = NULL;
-	processToClean->parentPtr = NULL;
-	processToClean->whoZappedMeHead = NULL;
-	processToClean->whoZappedMeNext = NULL;
-	processToClean->amIZapped = 0;
-	processToClean->timeRun = 0;
-	processToClean->status = EMPTY;
-}
-*/
 
 /* ------------------------- zap ----------------------------------- */
 int zap(int pidToZap)
 {
     //Want to consider Zap atomic up until dispatcher call. After that could be interupted
     disableInterrupts();
+    //Translate to pointer for easier code understanding
     procPtr procToZap = &(ProcTable[ (pidToZap % MAXPROC) ]);
 	
     // check if zapping itself
@@ -584,7 +558,7 @@ int zap(int pidToZap)
 		USLOSS_Console("zap(): process being zapped does not exist.  Halting...\n");
 		USLOSS_Halt(1);
 	} 
-	
+	//Check if process attempting to zap has already quit, if so want to return before we go into zap_block
 	if(procToZap->status == QUITTED && !isZapped())
 		return 0;
 	else if (procToZap->status == QUITTED && isZapped())
@@ -680,9 +654,9 @@ void setZapped(int pidToZap)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
-	
+
 	//If not process currently running
-	if(Current == NULL)
+	if(Current == NULL || Current->status == QUITTED || Current->status == EMPTY)
 	{
         Current = ReadyList;
         Current->timeStart = USLOSS_Clock();
@@ -691,30 +665,19 @@ void dispatcher(void)
         USLOSS_ContextSwitch(NULL, &(Current->state));
 	}
 	else //Else some process current running
-    {   
-        //If processes is being switched due to timeSlice, reset its timeRun to 0.
-        if(isTimeSlice)
-        {
-            Current->timeRun = 0;
-            //Reset timeSlice flag
-            isTimeSlice = 0;
-        }
-        else
-        {
-            //Record runtime of Current process before switching
-            Current->timeRun += (USLOSS_Clock() - Current->timeStart);
-        }
-        
-		//For telling ContextSwitch who prev and current processes are
-		
-		procPtr prevProc = Current;
-		if(prevProc->status == RUNNING)
+    {
+        //Record runtime of Current process before switching
+        Current->timeRun += (USLOSS_Clock() - Current->timeStart);
+       	
+        if(Current->status == RUNNING)
 		{
-			prevProc->status = READY;
-			removeRL(prevProc);
-			insertRL(prevProc);
+			Current->status = READY;
+            removeRL(Current);
+			insertRL(Current);
 		}
-		Current = ReadyList;
+        
+        procPtr prevProc = Current;
+        Current = ReadyList;
 		//Set current status to Running
 		Current->status = RUNNING;
 		        
@@ -722,7 +685,6 @@ void dispatcher(void)
         Current->timeStart = USLOSS_Clock();
 		enableInterrupts();
 		USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
-
 	}
    
 } /* dispatcher */
@@ -751,6 +713,7 @@ int sentinel (char *dummy)
 } /* sentinel */
 
 
+/* ------------------------- checkDeadlock ----------------------------------- */
 /* check to determine if deadlock has occurred... */
 static void checkDeadlock()
 {
@@ -780,13 +743,10 @@ static void checkDeadlock()
 } /* checkDeadlock */
 
 
-/*
- * Disables the interrupts.
- */
- 
+/* ------------------------- enableInterrupts ----------------------------------- */
 void enableInterrupts()
 {
-	// turn the interrupts OFF iff we are in kernel mode
+	// turn the interrupts on if we are in kernel mode
     if( (USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0 ) {
         //not in kernel mode
         USLOSS_Console("Kernel Error: Not in kernel mode, may not ");
@@ -796,6 +756,9 @@ void enableInterrupts()
     	//We ARE in kernel mode
     	USLOSS_PsrSet( USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT );	
 }
+
+
+/* ------------------------- disableInterrupts ----------------------------------- */
 void disableInterrupts()
 {
     // turn the interrupts OFF iff we are in kernel mode
@@ -813,10 +776,7 @@ void disableInterrupts()
 /* ------------------------- clock_handler ----------------------------------- */
 void clock_handler(int type, void *todo)
 {
- //   if( ( (USLOSS_Clock() - Current->timeStart) + Current->timeRun) > SLICE_LENGTH)
- //   {
-  //      timeSlice();
-  //  }
+    timeSlice();
 }
 
 
@@ -840,30 +800,6 @@ void disk_handler(int type, void *todo) {
     
 }
 
-/* ------------------------- dumpProcesses ----------------------------------- */
-void dumpProcesses()
-{
-	int i;
-    
-    dumpProcessHeader();
-    
-	for(i = 0; i < MAXPROC; i++)
-	{
-        dumpProcess(&ProcTable[i]);
-	}
-}
-
-/* ------------------------- printReadyList ----------------------------------- */
-void printReadyList()
-{
-	procPtr temp = ReadyList; 
-	USLOSS_Console("ID     Name       Status     Priority\n");
-	while(temp->nextProcPtr != NULL)
-	{
-		USLOSS_Console("%d     %s     %d     %d\n", temp->pid, temp->name, temp->status, temp->priority);
-		temp = temp->nextProcPtr;
-	}
-}
 
 /* ------------------------- inKernel ----------------------------------- */
 int inKernel()
@@ -959,7 +895,6 @@ void removeRL(procPtr slot)
 			if(toRemove->pid == tempPtr->pid)
 			{
 				tempTrail->nextProcPtr = tempPtr->nextProcPtr;
-
 				break;
 			}
 			//Else move to next process
@@ -1060,14 +995,10 @@ int readCurStartTime(void)
 
 void timeSlice(void)
 {
-    //If timeSlice needed, remove Current from readyList, and reinsert at back of priority.
-    //Set timeSlice flag to true and call dispatcher
-    removeRL(Current);
-    insertRL(Current);
-    
-    //To let dispatcher know to reset process run time
-    isTimeSlice = 1;
-    dispatcher();
+    if( (USLOSS_Clock() - Current->timeStart) > SLICE_LENGTH)
+    {
+        dispatcher();
+    }
 }
 
 
@@ -1077,7 +1008,22 @@ int readtime(void)
 	//Divide result by 1000 to get result in milliseconds instead of microseconds
 	return (  (Current->timeRun + (USLOSS_Clock() - Current->timeStart) ) / 1000);
 }
- 
+
+
+
+/* ------------------------- dumpProcesses ----------------------------------- */
+void dumpProcesses()
+{
+    int i;
+    
+    dumpProcessHeader();
+    
+    for(i = 0; i < MAXPROC; i++)
+    {
+        dumpProcess(&ProcTable[i]);
+    }
+}
+
 
 /* ------------------------- dumpProcess ----------------------------------- */
 void dumpProcess(procPtr aProcPtr)
@@ -1090,13 +1036,22 @@ void dumpProcess(procPtr aProcPtr)
     char *status = statusString(aProcPtr->status);
     int kids = kidsCount(aProcPtr);
     char *name = aProcPtr->name;
-    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-5d %-10s\n", pid, parentPid, priority, status, kids, -1, name);
+    int timeRun;
+    if(aProcPtr->status != EMPTY)
+    {
+        timeRun = (aProcPtr->timeRun);
+    }
+    else
+    {
+        timeRun = 0;
+    }
+    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-8d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
 }
 
 /* ------------------------- dumpProcessHeader ----------------------------------- */
 void dumpProcessHeader()
 {
-    USLOSS_Console("PID	Parent	Priority   Status          # Kids     CPUtime Name\n");
+    USLOSS_Console("PID	Parent	Priority   Status          # Kids     CPUtime   Name\n");
 }
 
 /* ------------------------- statusString ----------------------------------- */
