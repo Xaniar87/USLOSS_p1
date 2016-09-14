@@ -8,7 +8,6 @@
 #define QUITTED 3
 #define ZAP_BLOCKED 4
 #define RUNNING 5
-#define SELF_BLOCK 11
 #define SLICE_LENGTH 80000
 typedef struct procStruct procStruct;
 

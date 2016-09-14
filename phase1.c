@@ -171,6 +171,12 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     //Turn off interrupts during fork creation process
     disableInterrupts();
     
+	//If startFunc or name variable is NULL
+    if(startFunc == NULL || name == NULL)
+    {
+    	return -1;
+	}
+    
     int procSlot = -1;
     int forkCounter = 0;
 
@@ -379,7 +385,7 @@ int join(int *status)
         if(isZapped())
 		{
         	*status = Current->quitHead->quitStatus;
-            return -1;
+             return -1;
         }
        
 		
@@ -462,7 +468,6 @@ void quit(int status)
         	//If a child has not quit, exit with error
             if(tempPtr->status != QUITTED)
             {
-                dumpProcesses();
                 USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
                 USLOSS_Halt(1);
             }
@@ -518,8 +523,9 @@ void quit(int status)
 	Current->quitStatus = status;
 	//Take quit process off of readylist
 	removeRL(Current);
+	p1_quit(Current->pid);
     dispatcher();
-    p1_quit(Current->pid);
+  
 } /* quit */
 
 //Function that runs through quit children of a parent that are not joined when parent wants to quit.
@@ -683,6 +689,7 @@ void dispatcher(void)
 		        
         //Set start time for process about to begin
         Current->timeStart = USLOSS_Clock();
+        p1_switch(prevProc->pid, Current->pid);
 		enableInterrupts();
 		USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
 	}
@@ -937,7 +944,7 @@ void removeChild(procPtr child)
 int blockMe(int newStatus)
 {
     //Set status to status code passed in (Currently have status 11 for SELF_BLOCKED
-    if(newStatus < 10)
+    if(newStatus <= 10)
     {
         USLOSS_Console("ERROR: status given for blockMe function must be greater than 10. Exiting...");
         USLOSS_Halt(1);
@@ -971,9 +978,11 @@ int unblockProc(int pid)
      */
     
     procPtr ProcToUnBlock = &ProcTable[pid % MAXPROC];
+  
     //if the indicated process was not blocked, does not exist, is the current process, or is blocked on a status less than or equal to 10.
     if(ProcToUnBlock->status <= 10 || ProcToUnBlock->pid == Current->pid)
         return -2;
+  
     ProcToUnBlock->status = READY;
     insertRL(ProcToUnBlock);
     dispatcher();
@@ -1045,7 +1054,15 @@ void dumpProcess(procPtr aProcPtr)
     {
         timeRun = 0;
     }
-    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-8d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
+    if(aProcPtr->status < 10)
+    {
+	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-8d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
+	}
+	else
+	{
+		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-8d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
+	}
+		
 }
 
 /* ------------------------- dumpProcessHeader ----------------------------------- */
