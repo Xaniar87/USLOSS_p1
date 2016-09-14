@@ -33,7 +33,6 @@ void insertRL(procPtr slot);
 void removeRL(procPtr slot);
 void removeChild(procPtr child);
 void printReadyList();
-int prevPid = -1;
 int zap(int pidToZap);
 void releaseZapBlocks();
 void setZapped(int pidToZap);
@@ -66,6 +65,8 @@ static procPtr ReadyList;
 
 // current process ID
 procPtr Current;
+
+int prevPid = -1;
 
 // the next pid to be assigned
 unsigned int pidCounter = SENTINELPID;
@@ -1037,30 +1038,31 @@ void dumpProcesses()
 /* ------------------------- dumpProcess ----------------------------------- */
 void dumpProcess(procPtr aProcPtr)
 {
+	
     int pid = aProcPtr->pid;
+    if(aProcPtr->status == EMPTY)
+    	pid = -1;
     int parentPid = -2;
-    if (aProcPtr->parentPtr != NULL)
+    if (aProcPtr->parentPtr != NULL && aProcPtr->status != EMPTY)
         parentPid = aProcPtr->parentPtr->pid;
-    int priority = aProcPtr->priority;
+    int priority = -1;
+    if(aProcPtr->status != EMPTY)
+    	priority = aProcPtr->priority;
     char *status = statusString(aProcPtr->status);
     int kids = kidsCount(aProcPtr);
     char *name = aProcPtr->name;
-    int timeRun;
-    if(aProcPtr->status != EMPTY)
+    int timeRun = -1;
+    if(aProcPtr->status != EMPTY && aProcPtr->timeRun > 0)
     {
-        timeRun = (aProcPtr->timeRun);
-    }
-    else
-    {
-        timeRun = 0;
+    	  	timeRun = (aProcPtr->timeRun);
     }
     if(aProcPtr->status < 10)
     {
-	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-8d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
+	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-9d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
 	}
 	else
 	{
-		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-8d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
+		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-9d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
 	}
 		
 }
