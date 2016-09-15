@@ -381,15 +381,7 @@ int join(int *status)
      
         //Dispatcher may have reenabled interupts, need to disable them again while we process rest of join
         disableInterrupts();
-        
-        //Condition where join process was zapped while waiting for child to quit
-        if(isZapped())
-		{
-        	*status = Current->quitHead->quitStatus;
-             return -1;
-        }
-       
-		
+        		
 		*status = Current->quitHead->quitStatus;
         //Save temp ID since will be moving past current quit process
         int temp_pid = Current->quitHead->pid;
@@ -399,11 +391,20 @@ int join(int *status)
         Current->quitHead->status = EMPTY;
         
         strcpy(Current->quitHead->name, " " );
-        //quitHead = next element on quitlist
+        
+		//quitHead = next element on quitlist
         Current->quitHead = Current->quitHead->quitNext;
-              
-        //Reenable Interrupts
+        
+		  
+        
+		//Reenable Interrupts
         enableInterrupts();
+		
+		//Condition where join process was zapped while waiting for child to quit
+        if(isZapped())
+		{
+        	return -1;
+        }   
         //Return pid of child and status
         return (temp_pid);
         
@@ -411,12 +412,6 @@ int join(int *status)
     // if child process already quitted report quit status
 	else
 	{
-		if(isZapped())
-		{
-	   		*status = Current->quitHead->quitStatus;
-       		 return -1;
-   		}
-        
 		*status = Current->quitHead->quitStatus;
         //Store pid into temp spot because about to take it off the quitList
         int temp_pid = Current->quitHead->pid;
@@ -431,6 +426,10 @@ int join(int *status)
 		
         //Turn interrupts back on
         enableInterrupts();
+        if(isZapped())
+		{
+	   		return -1;
+   		}
         
         //Return pid of process that quit (front of quitList)
         return (temp_pid);
@@ -981,7 +980,7 @@ int unblockProc(int pid)
     procPtr ProcToUnBlock = &ProcTable[pid % MAXPROC];
   
     //if the indicated process was not blocked, does not exist, is the current process, or is blocked on a status less than or equal to 10.
-    if(ProcToUnBlock->status <= 10 || ProcToUnBlock->pid == Current->pid)
+    if(ProcToUnBlock->status <= 10 || ProcToUnBlock->pid == Current->pid || ProcToUnBlock->pid != pid)
         return -2;
   
     ProcToUnBlock->status = READY;
