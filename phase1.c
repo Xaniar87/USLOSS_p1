@@ -1040,26 +1040,38 @@ void dumpProcess(procPtr aProcPtr)
 {
 	
     int pid = aProcPtr->pid;
+    //If Process entry is EMPTY, pid = -1
     if(aProcPtr->status == EMPTY)
     	pid = -1;
-    int parentPid = -2;
-    if (aProcPtr->parentPtr != NULL && aProcPtr->status != EMPTY)
+    
+    //If there ends up being no parent, status -2
+	int parentPid = -2;
+    
+	if (aProcPtr->parentPtr != NULL && aProcPtr->status != EMPTY)
         parentPid = aProcPtr->parentPtr->pid;
+        
     int priority = -1;
-    if(aProcPtr->status != EMPTY)
+  
+    //If Proctable slot is empty, use -1 for priority, otherwise use its priority.
+	if(aProcPtr->status != EMPTY)
     	priority = aProcPtr->priority;
-    char *status = statusString(aProcPtr->status);
+    
+	char *status = statusString(aProcPtr->status);
     int kids = kidsCount(aProcPtr);
     char *name = aProcPtr->name;
     int timeRun = -1;
-    if(aProcPtr->status != EMPTY && aProcPtr->timeRun > 0)
+  
+    //If Proctstatus not empty and time run is greater than 0, get time run, else use -1
+	if(aProcPtr->status != EMPTY && aProcPtr->timeRun > 0)
     {
     	  	timeRun = (aProcPtr->timeRun);
     }
-    if(aProcPtr->status < 10)
+    //Case if status within known status values
+	if(aProcPtr->status < 10)
     {
 	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-9d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
 	}
+	//Case if status outside known status values
 	else
 	{
 		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-9d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
@@ -1074,6 +1086,7 @@ void dumpProcessHeader()
 }
 
 /* ------------------------- statusString ----------------------------------- */
+//Return name of status if one we have on our list
 char* statusString(int status)
 {
     switch(status)
@@ -1088,7 +1101,8 @@ char* statusString(int status)
     }
 }
 
-/* ------------------------- statusString ----------------------------------- */
+/* ------------------------- kidsCount ----------------------------------- */
+//Used for DumpProcess to see how many children process has
 int kidsCount(procPtr aProcPtr)
 {
     int kidsCounter = 0;
