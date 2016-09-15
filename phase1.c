@@ -3,6 +3,9 @@
    University of Arizona
    Computer Science 452
    Fall 2016
+ 
+   Jason Elish
+   Yikai Cao
    ------------------------------------------------------------------------ */
 
 
@@ -10,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
 #include "kernel.h"
 
 /* ------------------------- Prototypes ----------------------------------- */
@@ -66,6 +68,7 @@ static procPtr ReadyList;
 // current process ID
 procPtr Current;
 
+//For making sure we don't reuse same PID
 int prevPid = -1;
 
 // the next pid to be assigned
@@ -257,6 +260,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     ProcTable[procSlot].status          = READY;
     ProcTable[procSlot].amIZapped		= 0;
     ProcTable[procSlot].timeRun         = 0;
+    ProcTable[procSlot].timeStart       = 0;
     ProcTable[procSlot].quitStatus		= 0;
     
     // fill in parentPid
@@ -395,8 +399,6 @@ int join(int *status)
 		//quitHead = next element on quitlist
         Current->quitHead = Current->quitHead->quitNext;
         
-		  
-        
 		//Reenable Interrupts
         enableInterrupts();
 		
@@ -418,7 +420,7 @@ int join(int *status)
         
         //Change status of quitprocess to Empty so slot can be filled on process table
         Current->quitHead->status = EMPTY;	
-
+        strcpy(Current->quitHead->name, " " );
 		removeChild(Current->quitHead);
 
         //Move the head of the list to the next Process
@@ -426,6 +428,7 @@ int join(int *status)
 		
         //Turn interrupts back on
         enableInterrupts();
+        
         if(isZapped())
 		{
 	   		return -1;
@@ -673,7 +676,7 @@ void dispatcher(void)
 	else //Else some process current running
     {
         //Record runtime of Current process before switching
-        Current->timeRun += (USLOSS_Clock() - Current->timeStart);
+        
        	
         if(Current->status == RUNNING)
 		{
@@ -688,10 +691,15 @@ void dispatcher(void)
 		Current->status = RUNNING;
 		        
         //Set start time for process about to begin
-        Current->timeStart = USLOSS_Clock();
-        p1_switch(prevProc->pid, Current->pid);
-		enableInterrupts();
-		USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
+        if(prevProc->pid != Current->pid)
+        {
+            prevProc->timeRun += (USLOSS_Clock() - prevProc->timeStart);
+            Current->timeStart = USLOSS_Clock();
+            p1_switch(prevProc->pid, Current->pid);
+            enableInterrupts();
+            USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
+        }
+        
 	}
    
 } /* dispatcher */
@@ -1006,6 +1014,8 @@ void timeSlice(void)
 {
     if( (USLOSS_Clock() - Current->timeStart) > SLICE_LENGTH)
     {
+        //If we are calling dispatcher due to timeslice, reset process timeStart to 0
+        Current->timeStart = 0;
         dispatcher();
     }
 }
@@ -1068,12 +1078,12 @@ void dumpProcess(procPtr aProcPtr)
     //Case if status within known status values
 	if(aProcPtr->status < 10)
     {
-	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-9d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
+	    USLOSS_Console(" %-5d  %-5d   %-10d %-15s %-10d %-7d %-10s\n", pid, parentPid, priority, status, kids, timeRun, name);
 	}
 	//Case if status outside known status values
 	else
 	{
-		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-9d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
+		USLOSS_Console(" %-5d  %-5d   %-10d %-15d %-10d %-7d %-10s\n", pid, parentPid, priority, aProcPtr->status, kids, timeRun, name);
 	}
 		
 }

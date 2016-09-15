@@ -17,24 +17,24 @@ struct procStruct {
    procPtr         nextProcPtr;
    procPtr         childProcPtr;
    procPtr         nextSiblingPtr;
-   procPtr		   quitHead;        // added attribute
-   procPtr 		   quitNext;        // added attribute
-   procPtr         parentPtr;       // added attribute
-   procPtr         whoZappedMeHead; // added attribute
-   procPtr		   whoZappedMeNext; // added attribute
-   char            name[MAXNAME];     /* process's name */
-   char            startArg[MAXARG];  /* args passed to process */
-   USLOSS_Context  state;             /* current context for process */
-   int             pid;               /* process id */
+   procPtr		   quitHead;         // added attribute
+   procPtr 		   quitNext;         // added attribute
+   procPtr         parentPtr;        // added attribute
+   procPtr         whoZappedMeHead;  // added attribute
+   procPtr		   whoZappedMeNext;  // added attribute
+   char            name[MAXNAME];    /* process's name */
+   char            startArg[MAXARG]; /* args passed to process */
+   USLOSS_Context  state;            /* current context for process */
+   int             pid;              /* process id */
    int             priority;
-   int (* startFunc) (char *);   /* function where process begins -- launch */
+   int (* startFunc) (char *);       /* function where process begins -- launch */
    char           *stack;
    unsigned int    stackSize;
-   int             status;        /* READY, BLOCKED, QUIT, etc. */
-   int			   quitStatus;      // added attribute
-   int             amIZapped;       // added attribute
-   int             timeStart;       // added attribute When process began running
-   int             timeRun;         //How long process has run for
+   int             status;           /* READY, BLOCKED, QUIT, etc. */
+   int			   quitStatus;       // added attribute
+   int             amIZapped;        // added attribute
+   int             timeStart;        // added attribute When process began running
+   int             timeRun;          //How long process has run for
  
 
    /* other fields as needed... */
