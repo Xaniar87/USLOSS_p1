@@ -310,6 +310,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 	// call dispatcher if not sentinel
     if (ProcTable[procSlot].priority != SENTINELPRIORITY) 
         dispatcher();
+    
     enableInterrupts();
     
     return ProcTable[procSlot].pid;
@@ -717,13 +718,14 @@ void dispatcher(void)
         if(prevProc->pid != Current->pid)
         {
             //Record runtime of Current process before switching
-            //If switching due to a timeSlice, timerun was switched to 0 in timeslice function
+            //If switching due to a timeSlice, timestart was switched to 0 in timeslice function
             prevProc->timeRun += (USLOSS_Clock() - prevProc->timeStart);
             Current->timeStart = USLOSS_Clock();
             p1_switch(prevProc->pid, Current->pid);
             enableInterrupts();
             USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
         }
+    
         enableInterrupts();
 	}
    
@@ -1026,6 +1028,8 @@ int unblockProc(int pid)
      The dispatcher will be called as a side-effect of this function.
      */
     
+    disableInterrupts();
+    
     //Check if in Kernel mode, halt if not
     if(!inKernel())
     {
@@ -1071,14 +1075,16 @@ void timeSlice(void)
         USLOSS_Console("timeSlice(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    disableInterrupts();
     
     if( (USLOSS_Clock() - Current->timeStart) > SLICE_LENGTH)
     {
-        //If we are calling dispatcher due to timeslice, indicate timeSliceFlag and call dispatcher
+        //If we are calling dispatcher due to timeslice, record timeRun for current program and set its timeStart to now. So dispatcher doesn't have to worry about it
         Current->timeRun += USLOSS_Clock() - Current->timeStart;
         Current->timeStart = USLOSS_Clock();
         dispatcher();
     }
+    enableInterrupts();
 }
 
 
@@ -1100,6 +1106,8 @@ int readtime(void)
 /* ------------------------- dumpProcesses ----------------------------------- */
 void dumpProcesses()
 {
+    disableInterrupts();
+    
     //Check if in Kernel mode, halt if not
     if(!inKernel())
     {
@@ -1115,6 +1123,7 @@ void dumpProcesses()
     {
         dumpProcess(&ProcTable[i]);
     }
+    enableInterrupts();
 }
 
 
