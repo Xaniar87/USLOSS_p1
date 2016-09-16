@@ -76,6 +76,8 @@ unsigned int pidCounter = SENTINELPID;
 
 
 
+
+
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
    Name - startup
@@ -548,6 +550,13 @@ void cleanZombies(procPtr zombieHead)
 /* ------------------------- zap ----------------------------------- */
 int zap(int pidToZap)
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("zap(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
     //Want to consider Zap atomic up until dispatcher call. After that could be interupted
     disableInterrupts();
     //Translate to pointer for easier code understanding
@@ -618,7 +627,14 @@ void releaseZapBlocks()
 /* ------------------------- isZapped ----------------------------------- */
 int isZapped(void)
 {
-	return Current->amIZapped;
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("isZapped(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
+    return Current->amIZapped;
 }
 
 /* ------------------------- setZapped ----------------------------------- */
@@ -663,7 +679,13 @@ void setZapped(int pidToZap)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
-
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("dispatcher(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
 	//If not process currently running
 	if(Current == NULL || Current->status == QUITTED || Current->status == EMPTY)
 	{
@@ -671,13 +693,11 @@ void dispatcher(void)
         Current->timeStart = USLOSS_Clock();
         Current->status = RUNNING;
         enableInterrupts();
+        p1_switch(0, Current->pid);
         USLOSS_ContextSwitch(NULL, &(Current->state));
 	}
 	else //Else some process current running
     {
-        //Record runtime of Current process before switching
-        
-       	
         if(Current->status == RUNNING)
 		{
 			Current->status = READY;
@@ -693,8 +713,11 @@ void dispatcher(void)
         //Set start time for process about to begin
         if(prevProc->pid != Current->pid)
         {
+            //Record runtime of Current process before switching
+            //If switching due to a timeSlice, timerun was switched to 0 in timeslice function
             prevProc->timeRun += (USLOSS_Clock() - prevProc->timeStart);
             Current->timeStart = USLOSS_Clock();
+            timeSliceFlag = 0;
             p1_switch(prevProc->pid, Current->pid);
             enableInterrupts();
             USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
@@ -883,6 +906,12 @@ void insertRL(procPtr toBeAdded )
 /* ------------------------- getpid -----------------------------------  */
 int getpid()
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("getpid(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
 	return Current->pid;	
 }
 
@@ -951,6 +980,13 @@ void removeChild(procPtr child)
 /* ------------------------- blockMe ----------------------------------- */
 int blockMe(int newStatus)
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("blockMe(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
     //Set status to status code passed in (Currently have status 11 for SELF_BLOCKED
     if(newStatus <= 10)
     {
@@ -985,6 +1021,12 @@ int unblockProc(int pid)
      The dispatcher will be called as a side-effect of this function.
      */
     
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("unblockProc(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
     procPtr ProcToUnBlock = &ProcTable[pid % MAXPROC];
   
     //if the indicated process was not blocked, does not exist, is the current process, or is blocked on a status less than or equal to 10.
@@ -1005,6 +1047,12 @@ int unblockProc(int pid)
 /* ------------------------- timeSlice ----------------------------------- */
 int readCurStartTime(void)
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("readCurStartTime(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
     //Simple function to return time in microseconds that current processes started
     return Current->timeStart;
 }
@@ -1012,10 +1060,18 @@ int readCurStartTime(void)
 
 void timeSlice(void)
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("timeSlice(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
     if( (USLOSS_Clock() - Current->timeStart) > SLICE_LENGTH)
     {
-        //If we are calling dispatcher due to timeslice, reset process timeStart to 0
-        Current->timeStart = 0;
+        //If we are calling dispatcher due to timeslice, indicate timeSliceFlag and call dispatcher
+        timeRun += USLOSS_Clock - Current->timeStart;
+        timeStart = USLOSS_Clock();
         dispatcher();
     }
 }
@@ -1024,6 +1080,12 @@ void timeSlice(void)
 /* ------------------------- readtime ----------------------------------- */
 int readtime(void)
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("readtime(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
 	//Divide result by 1000 to get result in milliseconds instead of microseconds
 	return (  (Current->timeRun + (USLOSS_Clock() - Current->timeStart) ) / 1000);
 }
@@ -1033,6 +1095,13 @@ int readtime(void)
 /* ------------------------- dumpProcesses ----------------------------------- */
 void dumpProcesses()
 {
+    //Check if in Kernel mode, halt if not
+    if(!inKernel())
+    {
+        USLOSS_Console("dumpProcesses(): called while in user mode, by process %d. Halting...\n", Current->pid);
+        USLOSS_Halt(1);
+    }
+    
     int i;
     
     dumpProcessHeader();
