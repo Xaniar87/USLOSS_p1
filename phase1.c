@@ -717,7 +717,6 @@ void dispatcher(void)
             //If switching due to a timeSlice, timerun was switched to 0 in timeslice function
             prevProc->timeRun += (USLOSS_Clock() - prevProc->timeStart);
             Current->timeStart = USLOSS_Clock();
-            timeSliceFlag = 0;
             p1_switch(prevProc->pid, Current->pid);
             enableInterrupts();
             USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
@@ -1070,8 +1069,8 @@ void timeSlice(void)
     if( (USLOSS_Clock() - Current->timeStart) > SLICE_LENGTH)
     {
         //If we are calling dispatcher due to timeslice, indicate timeSliceFlag and call dispatcher
-        timeRun += USLOSS_Clock - Current->timeStart;
-        timeStart = USLOSS_Clock();
+        Current->timeRun += USLOSS_Clock() - Current->timeStart;
+        Current->timeStart = USLOSS_Clock();
         dispatcher();
     }
 }
