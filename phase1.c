@@ -306,10 +306,12 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     // for future phase(s)
     p1_fork(ProcTable[procSlot].pid);
 
+    
 	// call dispatcher if not sentinel
     if (ProcTable[procSlot].priority != SENTINELPRIORITY) 
         dispatcher();
-
+    enableInterrupts();
+    
     return ProcTable[procSlot].pid;
 } /* fork1 */
 
@@ -591,6 +593,7 @@ int zap(int pidToZap)
 	removeRL(Current);
 	
 	dispatcher();
+    enableInterrupts();
 	
     //If Process was zapped during its block
     if(isZapped())
@@ -721,7 +724,7 @@ void dispatcher(void)
             enableInterrupts();
             USLOSS_ContextSwitch(&prevProc->state, &ReadyList->state);
         }
-        
+        enableInterrupts();
 	}
    
 } /* dispatcher */
@@ -979,6 +982,7 @@ void removeChild(procPtr child)
 /* ------------------------- blockMe ----------------------------------- */
 int blockMe(int newStatus)
 {
+    disableInterrupts();
     //Check if in Kernel mode, halt if not
     if(!inKernel())
     {
@@ -999,7 +1003,9 @@ int blockMe(int newStatus)
 
     //Remove from readyList and call dispatcher
     removeRL(Current);
+    
     dispatcher();
+    enableInterrupts();
     //When process is reactivated, check and see if it was zapped. If so, return -1
     if(Current->amIZapped)
     {
